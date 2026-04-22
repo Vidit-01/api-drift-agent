@@ -20,3 +20,8 @@
 - Added preview/apply patch generation in `src/drift_agent/patch_generator/` plus a Typer CLI in `src/drift_agent/cli.py`.
 - Added the CI workflow in `.github/workflows/drift-check.yml`.
 - Added focused tests for the patch generator and agent behavior in `tests/test_patch_generator.py` and `tests/test_agent.py`.
+
+## Milestone 4
+
+- Removed cached/generated artifacts such as `__pycache__`, `.pytest_cache`, and editable-install metadata.
+- Removed the copied reference scaffold under `mnt/` after using it to implement the project, keeping the repo focused on the actual source, tests, and project docs.

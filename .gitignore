@@ -1,0 +1,10 @@
+.pytest_cache/
+__pycache__/
+.coverage
+coverage.xml
+dist/
+build/
+*.egg-info/
+.venv/
+patches/
+

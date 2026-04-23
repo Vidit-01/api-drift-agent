@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Callable
 
 import ollama
+import yaml
 
 from drift_agent.agent.prompts import SYSTEM_PROMPT, TOOLS
 from drift_agent.agent.tools import call_tool
@@ -25,8 +27,15 @@ class DriftAgent:
         self.client = ollama.Client(host=ollama_host)
         self._check_model()
 
-    def analyze(self, drift_items: list[DriftItem]) -> list[AgentFinding]:
-        return [self._analyze_item(item) for item in drift_items]
+    def analyze(self, drift_items: list[DriftItem], on_finding: Callable[[AgentFinding, int, int], None] | None = None) -> list[AgentFinding]:
+        findings: list[AgentFinding] = []
+        total = len(drift_items)
+        for index, item in enumerate(drift_items, start=1):
+            finding = self._analyze_item(item)
+            findings.append(finding)
+            if on_finding:
+                on_finding(finding, index, total)
+        return findings
 
     def _check_model(self) -> None:
         try:
@@ -78,7 +87,10 @@ class DriftAgent:
                     result = call_tool(self.toolkit, tool_name, arguments)
                     messages.append({"role": "tool", "name": tool_name, "content": json.dumps(result)})
                 continue
-            payload = self._parse_json_with_retry(messages, message.get("content", ""))
+            try:
+                payload = self._parse_json_with_retry(messages, message.get("content", ""))
+            except AgentFailure as exc:
+                return self._ambiguous_finding(drift_item, tools_called, str(exc))
             return self._finding_from_payload(drift_item, payload, tools_called)
         return AgentFinding(
             drift_item=drift_item,
@@ -89,9 +101,19 @@ class DriftAgent:
             patch=None,
         )
 
+    def _ambiguous_finding(self, drift_item: DriftItem, tools_called: list[str], reason: str) -> AgentFinding:
+        return AgentFinding(
+            drift_item=drift_item,
+            source_of_truth="AMBIGUOUS",
+            confidence="low",
+            reasoning=f"{drift_item.category.value} at {drift_item.location}. {reason}",
+            evidence=[{"tools_called": tools_called}],
+            patch=None,
+        )
+
     def _parse_json_with_retry(self, messages: list[dict[str, Any]], content: str) -> dict[str, Any]:
         try:
-            return json.loads(content)
+            return self._parse_json_object(content)
         except json.JSONDecodeError:
             messages.extend(
                 [
@@ -107,9 +129,40 @@ class DriftAgent:
             )
             retry_content = self._response_message(retry).get("content", "")
             try:
-                return json.loads(retry_content)
+                return self._parse_json_object(retry_content)
             except json.JSONDecodeError as exc:
                 raise AgentFailure("Agent returned malformed JSON twice") from exc
+
+    def _parse_json_object(self, content: str) -> dict[str, Any]:
+        decoder = json.JSONDecoder()
+        stripped = textwrap.dedent(content).strip()
+        candidates = [stripped]
+        if "```" in stripped:
+            candidates.extend(part.strip() for part in stripped.split("```") if part.strip())
+            candidates.extend(part.removeprefix("json").strip() for part in stripped.split("```") if part.strip().startswith("json"))
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+                if isinstance(payload, dict):
+                    return payload
+            except json.JSONDecodeError:
+                pass
+            for index, char in enumerate(candidate):
+                if char != "{":
+                    continue
+                try:
+                    payload, _ = decoder.raw_decode(candidate[index:])
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    return payload
+            try:
+                payload = yaml.safe_load(candidate)
+            except yaml.YAMLError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        raise json.JSONDecodeError("No JSON object found", content, 0)
 
     def _finding_from_payload(self, drift_item: DriftItem, payload: dict[str, Any], tools_called: list[str]) -> AgentFinding:
         patch_data = payload.get("patch")
@@ -178,4 +231,3 @@ class DriftAgent:
                 "tool_calls": getattr(message, "tool_calls", None),
             }
         return {}
-

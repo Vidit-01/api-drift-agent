@@ -130,7 +130,7 @@ def _emit_output(payload: dict[str, Any], output_format: str, output_file: str |
         text = json.dumps(payload, indent=2)
         console.print(text)
     else:
-        table = Table(title=f"DRIFT REPORT  {payload['spec_path']} ↔ {payload['src_path']}")
+        table = Table(title=f"DRIFT REPORT  {payload['spec_path']} <-> {payload['src_path']}")
         table.add_column("Severity")
         table.add_column("Endpoint")
         table.add_column("Location")
@@ -150,4 +150,3 @@ def _emit_output(payload: dict[str, Any], output_format: str, output_file: str |
 
 if __name__ == "__main__":
     app()
-

@@ -48,7 +48,7 @@ class PatchGenerator:
                 code_patches.append(finding.patch)
         if spec_patches:
             spec_output = self.output_dir / "spec_patched.yaml"
-            spec_output.write_text(apply_spec_patches(self.spec_path, spec_patches), encoding="utf-8")
+            spec_output.write_text(apply_spec_patches(self.spec_path, spec_patches, errors), encoding="utf-8")
             files_written.append(str(spec_output))
         if code_patches:
             summary_path = self.output_dir / "code_patch_summary.md"
@@ -116,11 +116,11 @@ class PatchGenerator:
         return "\n".join(lines) + "\n"
 
     def _render_ambiguous(self, ambiguous: list[AgentFinding]) -> str:
-        lines = ["# Ambiguous Drift Items — Manual Review Required", ""]
+        lines = ["# Ambiguous Drift Items - Manual Review Required", ""]
         for index, finding in enumerate(ambiguous, start=1):
             lines.extend(
                 [
-                    f"## {index}. {finding.drift_item.endpoint} — {finding.drift_item.category.value}",
+                    f"## {index}. {finding.drift_item.endpoint} - {finding.drift_item.category.value}",
                     "",
                     f"**Location:** {finding.drift_item.location}",
                     f"**Spec evidence:** {finding.drift_item.spec_evidence or '(absent)'}",
@@ -132,4 +132,3 @@ class PatchGenerator:
                 ]
             )
         return "\n".join(lines)
-

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import textwrap
+import urllib.error
+import urllib.request
 from dataclasses import asdict
 from typing import Any, Callable
 
@@ -15,16 +17,70 @@ from drift_agent.errors import AgentFailure, ModelNotAvailableError, OllamaConne
 from drift_agent.types import AgentFinding, DriftCategory, DriftItem, PatchSpec
 
 
+class GroqChatClient:
+    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", timeout: int = 3600):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def show(self, model: str) -> dict[str, str]:
+        return {"name": model}
+
+    def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any] | None = None, **_: Any) -> dict[str, Any]:
+        payload = {
+            "model": model,
+            "messages": self._messages_for_api(messages),
+            "temperature": (options or {}).get("temperature", 0.1),
+        }
+        request = urllib.request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise AgentFailure(f"Groq request failed with HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            raise AgentFailure(f"Groq request failed: {exc.reason}") from exc
+        return {"message": data.get("choices", [{}])[0].get("message", {})}
+
+    def _messages_for_api(self, messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+        api_messages: list[dict[str, str]] = []
+        for message in messages:
+            role = message.get("role", "user")
+            if role not in {"system", "user", "assistant", "tool"}:
+                role = "user"
+            api_messages.append({"role": role, "content": str(message.get("content", ""))})
+        return api_messages
+
+
 class DriftAgent:
     def __init__(
         self,
         toolkit: ContextToolkit,
         model: str = "qwen2.5-coder:7b",
         ollama_host: str = "http://localhost:11434",
+        provider: str = "ollama",
+        groq_api_key: str | None = None,
+        groq_base_url: str = "https://api.groq.com/openai/v1",
     ):
         self.toolkit = toolkit
         self.model = model
-        self.client = ollama.Client(host=ollama_host)
+        self.provider = provider
+        if provider == "groq":
+            if not groq_api_key:
+                raise AgentFailure("GROQ_KEY is required when explain provider is groq")
+            self.client = GroqChatClient(api_key=groq_api_key, base_url=groq_base_url)
+        else:
+            self.client = ollama.Client(host=ollama_host)
         self._check_model()
 
     def analyze(self, drift_items: list[DriftItem], on_finding: Callable[[AgentFinding, int, int], None] | None = None) -> list[AgentFinding]:

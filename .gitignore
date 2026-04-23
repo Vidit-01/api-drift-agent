@@ -9,3 +9,4 @@ build/
 patches/
 test/
 tests/
+.env

@@ -1,4 +1,5 @@
-from drift_agent.agent.core import DriftAgent
+from drift_agent.agent.core import DriftAgent, GroqChatClient
+from drift_agent.cli import _finding_explanation, _load_env_file
 from drift_agent.context_tools import ContextToolkit
 from drift_agent.types import DriftCategory, DriftItem
 
@@ -98,4 +99,100 @@ def test_agent_marks_malformed_model_response_ambiguous(monkeypatch, tmp_path):
 
     assert finding.source_of_truth == "AMBIGUOUS"
     assert finding.patch is None
+
+
+def test_agent_progress_callback_receives_findings(monkeypatch, tmp_path):
+    monkeypatch.setattr("drift_agent.agent.core.ollama.Client", lambda host: FakeClient())
+    toolkit = ContextToolkit(project_root=tmp_path, spec_path=tmp_path / "openapi.yaml")
+    agent = DriftAgent(toolkit=toolkit)
+    progress = []
+
+    findings = agent.analyze(
+        [
+            DriftItem(
+                id="1",
+                endpoint="GET /users",
+                category=DriftCategory.ADDITIVE_DRIFT,
+                location="response.200.schema.created_at",
+                detail="Missing field",
+                spec_evidence=None,
+                code_evidence="string/date-time",
+                severity="warning",
+            )
+        ],
+        on_finding=lambda finding, index, total: progress.append((finding.source_of_truth, index, total)),
+    )
+
+    assert findings[0].source_of_truth == "CODE"
+    assert progress == [("CODE", 1, 1)]
+
+
+def test_groq_client_sanitizes_messages_for_api():
+    client = GroqChatClient(api_key="test")
+
+    messages = client._messages_for_api(
+        [
+            {"role": "system", "content": "system"},
+            {"role": "tool", "name": "search", "content": {"ok": True}},
+            {"role": "unexpected", "content": "fallback"},
+        ]
+    )
+
+    assert messages == [
+        {"role": "system", "content": "system"},
+        {"role": "tool", "content": "{'ok': True}"},
+        {"role": "user", "content": "fallback"},
+    ]
+
+
+def test_load_env_file_reads_groq_key(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "# ignored",
+                "GROQ_KEY='secret-key'",
+                "OTHER=value",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    values = _load_env_file(env_path)
+
+    assert values["GROQ_KEY"] == "secret-key"
+    assert values["OTHER"] == "value"
+
+
+def test_finding_explanation_includes_patch_details():
+    finding = DriftAgent.__new__(DriftAgent)._finding_from_payload(
+        DriftItem(
+            id="1",
+            endpoint="GET /users",
+            category=DriftCategory.ADDITIVE_DRIFT,
+            location="response.200.schema.created_at",
+            detail="Missing field",
+            spec_evidence=None,
+            code_evidence="string/date-time",
+            severity="warning",
+        ),
+        {
+            "source_of_truth": "CODE",
+            "confidence": "high",
+            "reasoning": "Code returns this field consistently.",
+            "patch": {
+                "target": "spec",
+                "patch_type": "add_field",
+                "location": "paths//users/get/responses/200/content/application/json/schema/properties",
+                "content": "created_at:\n  type: string\n  format: date-time",
+            },
+        },
+        [],
+    )
+
+    explanation = _finding_explanation(finding)
+
+    assert "Code returns this field consistently." in explanation
+    assert "patch: spec add_field" in explanation
+    assert "created_at" in explanation
 

@@ -2,10 +2,8 @@
 
 `api-drift-agent` detects drift between an OpenAPI 3.x contract and a FastAPI codebase.
 
+![](/assets/first.gif)
 
-
-
-https://github.com/user-attachments/assets/755ae9f6-fec0-4c4d-94cd-be6ab2d69c8f
 
 
 It is built around two layers:
@@ -74,6 +72,9 @@ Fail the command when error-severity drift exists:
 ```bash
 drift-check --spec openapi.yaml --src ./app --output-format json --exit-code
 ```
+## Video Demo
+
+https://github.com/user-attachments/assets/755ae9f6-fec0-4c4d-94cd-be6ab2d69c8f
 
 ## What The Tool Detects
 

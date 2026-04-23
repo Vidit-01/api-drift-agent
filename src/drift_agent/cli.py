@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import uuid
+import textwrap
 from collections import Counter
 from datetime import datetime, timezone
 from fnmatch import fnmatch
@@ -102,12 +103,15 @@ def main(
     status_text = "booting deterministic scanner"
     agent_progress = ""
     agent_offset = 0
+    use_alt_screen = _can_scroll_interactively()
 
     with Live(
         _render_tui(spec, src, status_text, drift_items, findings, patch_report, explain, agent_progress, agent_offset=agent_offset),
         console=console,
         refresh_per_second=8,
         auto_refresh=False,
+        screen=use_alt_screen,
+        vertical_overflow="crop",
     ) as live:
         status_text = "loading OpenAPI contract"
         live.update(_render_tui(spec, src, status_text, drift_items, findings, patch_report, explain, agent_progress, agent_offset=agent_offset), refresh=True)
@@ -398,15 +402,17 @@ def _agent_panel(findings: list[AgentFinding], explain: bool, agent_progress: st
 
 
 def _finding_explanation(finding: AgentFinding) -> str:
+    reasoning = _clamp_text(finding.reasoning, width=46, max_lines=4)
     lines = [
-        f"{finding.confidence} confidence: {finding.reasoning}",
+        f"{finding.confidence} confidence",
         f"drift: {finding.drift_item.category.value} at {finding.drift_item.location}",
+        f"why: {reasoning}",
     ]
     if finding.patch:
         lines.append(f"patch: {finding.patch.target} {finding.patch.patch_type} -> {finding.patch.location}")
         content = finding.patch.content.strip()
         if content:
-            lines.append(f"content: {content[:180]}")
+            lines.append(f"content: {_clamp_text(content, width=46, max_lines=2)}")
     else:
         lines.append("patch: manual review / no automatic codefix")
     return "\n".join(lines)
@@ -477,7 +483,7 @@ def _scroll_subtitle(offset: int, max_offset: int, keys: str) -> str:
 
 
 def _visible_drift_count() -> int:
-    return max(6, console.height - 10)
+    return max(6, console.height - 12)
 
 
 def _drift_scroll_window() -> int:
@@ -485,7 +491,15 @@ def _drift_scroll_window() -> int:
 
 
 def _agent_visible_count() -> int:
-    return max(2, (console.height - 18) // 5)
+    return max(1, (console.height - 18) // 8)
+
+
+def _clamp_text(value: str, width: int = 48, max_lines: int = 3) -> str:
+    wrapped = textwrap.wrap(" ".join(value.split()), width=width) or [""]
+    clipped = wrapped[:max_lines]
+    if len(wrapped) > max_lines:
+        clipped[-1] = clipped[-1][: max(0, width - 3)] + "..."
+    return "\n".join(clipped)
 
 
 def _can_scroll_interactively() -> bool:

@@ -108,6 +108,7 @@ The TUI includes:
 - deterministic drift panel
 - footer with severity totals and scroll controls
 
+![](/assets/image.png)
 The deterministic drift appears as soon as the static comparison is complete. If explain mode is enabled, the agent runs after that while the deterministic output remains visible.
 
 ### TUI Controls

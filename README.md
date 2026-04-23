@@ -2,6 +2,12 @@
 
 `api-drift-agent` detects drift between an OpenAPI 3.x contract and a FastAPI codebase.
 
+
+
+
+https://github.com/user-attachments/assets/755ae9f6-fec0-4c4d-94cd-be6ab2d69c8f
+
+
 It is built around two layers:
 
 - a deterministic analyzer that parses the OpenAPI document, statically walks the FastAPI source tree, and reports exact contract differences
